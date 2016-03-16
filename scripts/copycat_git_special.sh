@@ -6,15 +6,34 @@ PANE_CURRENT_PATH="$1"
 
 source "$CURRENT_DIR/helpers.sh"
 
-git_status_files() {
-	local git_working_dir="$PANE_CURRENT_PATH"
-	local git_dir="$PANE_CURRENT_PATH/.git"
-	echo "$(git --git-dir="$git_dir" --work-tree="$git_working_dir" status --porcelain)"
+prefix_files() {
+	local prefix="$1"
+	local filter="$2"
+	local file_lists="${@:3}"
+	for files in $file_lists; do
+		while read -r line; do
+			if [ ! -z "$filter" ] && [[ $line == $filter* ]]; then
+				continue
+			fi
+			echo "${prefix}${line}"
+		done <<< "$files"
+	done
 }
 
-formatted_git_status() {
-	local raw_gist_status="$(git_status_files)"
-	echo "$(echo "$raw_gist_status" | cut -c 4-)"
+git_status_files() {
+	working_dir="$1"
+	prefix="${2-}"
+	filter="${3-}"
+
+	staged_files="$(git -C "$working_dir"  diff-index HEAD --cached --ignore-submodules --name-only --relative)"
+	unstaged_files="$(git -C "$working_dir"  diff-index HEAD --ignore-submodules --name-only --relative)"
+	untracked_files="$(git -C "$working_dir" ls-files --others --exclude-standard)"
+	echo "$(prefix_files "$prefix" "$filter" "$staged_files" "$unstaged_files" "$untracked_files")"
+
+	if [ ! -d "$working_dir/.git" ]; then
+		parent_files="$(git_status_files "$(dirname "$working_dir")" "../$prefix" "$(basename "$working_dir")")"
+		[ ! -z "$parent_files" ] && echo "$parent_files" 
+	fi
 }
 
 exit_if_no_results() {
@@ -26,7 +45,7 @@ exit_if_no_results() {
 }
 
 concatenate_files() {
-	local git_status_files="$(formatted_git_status)"
+	local git_status_files="$(git_status_files "$PANE_CURRENT_PATH")"
 	exit_if_no_results "$git_status_files"
 
 	local result=""
